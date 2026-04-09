@@ -1,7 +1,7 @@
 # ptcliputil
 
 Pronounced '_Pee-Tee_ Clip Util', ptcliputil is a CLI tool to copy text in the
-terminal, wether it is passed from another command via pipes (`|`) or read
+terminal, whether it is passed from another command via pipes (`|`) or read
 from files with a compatible encoding.
 
 ## Usage
@@ -84,6 +84,11 @@ _This is a reference to a Python script I made a while ago to generate random
 passwords with a few unrelated factors, incluiding the current weather in
 Berlin, Germany, the current date and time, the IP address of the user and a
 custom passphrase._
+
+### Clipboard dumping
+
+In v0.3.0 I added a functionality to save the current clipboard contents to a
+file using the `--save <FILE>` option.
 
 ## Building from source code
 

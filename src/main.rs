@@ -1,9 +1,9 @@
 use arboard::Clipboard;
 use clap::Parser;
-use std::io::Read;
-use std::{fs, io, process, thread, time::Duration};
+use std::io::{self, IsTerminal, Read, Write};
+use std::path::Path;
+use std::{fs, process, thread, time::Duration};
 
-/// CLI tool to copy text in the terminal, either passed from pipes or read from files
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -17,33 +17,40 @@ struct Args {
     /// Clear the clipboard after N seconds
     #[arg(short, long, value_name = "SECONDS")]
     clear: Option<u64>,
+
+    /// Save current clipboard content to a file
+    #[arg(short, long, value_name = "OUT_FILE")]
+    save: Option<String>,
 }
 
 fn main() {
     let args: Args = Args::parse();
 
-    // Check if program is piped
-    let is_piped: bool = !io::IsTerminal::is_terminal(&io::stdin());
+    if let Some(ref path) = args.save {
+        if let Err(e) = save_clipboard_to_file(path) {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+        process::exit(0);
+    }
 
+    let is_piped: bool = !io::stdin().is_terminal();
     if args.file.is_none() && !is_piped {
-        // Use the Command interface from clap to print help manually
         use clap::CommandFactory;
-        let mut cmd: clap::Command = Args::command();
-        cmd.print_help().unwrap();
+        Args::command().print_help().unwrap();
         println!();
         process::exit(0);
     }
 
-    if let Err(e) = run(args) {
+    if let Err(e) = run_copy(args) {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
 }
 
-fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+fn run_copy(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut content: String = String::new();
 
-    // 1. Check from the check in main() wether the program is piped or reading from file
     if let Some(file_path) = &args.file {
         content = fs::read_to_string(file_path)?;
     } else {
@@ -55,32 +62,29 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         return Err("Nothing to copy (content is empty)".into());
     }
 
-    // 2. Copy to clipboard
     let mut clipboard: Clipboard = Clipboard::new()?;
     clipboard.set_text(content_trimmed.to_string())?;
 
-    // 3. Verbose output
     let line_count: usize = content_trimmed.lines().count();
-    let character_count: usize = content_trimmed.chars().count();
-    let should_show_content: bool = args.verbose && line_count <= 1;
+    let char_count: usize = content_trimmed.chars().count();
 
-    if should_show_content {
+    if args.verbose && line_count <= 1 {
         println!("✓ Copied: \"{}\"", content_trimmed);
     } else {
         println!(
-            "✓ Content copied to clipboard ({} lines, {} characters).",
-            line_count, character_count
+            "✓ Content copied to clipboard ({} lines, {} chars).",
+            line_count, char_count
         );
     }
 
-    // 4. Delayed Clear Logic
+    // Delayed Clear Logic
     if let Some(seconds_until_clear) = args.clear {
         println!(
             "INFO: The `--clear` flag was detected. Clipboard will be cleared in {} seconds.",
             seconds_until_clear
         );
 
-        // Create a separate thread to clear the clipboard after N seconds.
+        // Clear the clipboard after N seconds.
         thread::sleep(Duration::from_secs(seconds_until_clear));
 
         let mut clipboard: Clipboard = Clipboard::new()?;
@@ -88,5 +92,29 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         println!("Clipboard cleared.");
     }
 
+    Ok(())
+}
+
+fn save_clipboard_to_file(path_str: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path: &Path = Path::new(path_str);
+
+    if path.exists() {
+        print!("File '{}' already exists. Overwrite? (y/N): ", path_str);
+        io::stdout().flush()?;
+
+        let mut input: String = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim().to_lowercase() != "y" {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    let mut clipboard: Clipboard = Clipboard::new()?;
+    let content: String = clipboard.get_text()?;
+
+    fs::write(path, content)?;
+    println!("✓ Clipboard saved to '{}'", path_str);
     Ok(())
 }
